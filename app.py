@@ -223,6 +223,41 @@ col3.metric(
 
 st.divider()
 
+# Mostramos la evolución temporal de las puntuaciones.
+if not df_filtered.empty and "fecha" in df_filtered.columns:
+    df_evolucion = df_filtered.copy()
+    df_evolucion["Fecha"] = pd.to_datetime(
+        df_evolucion["fecha"],
+        errors="coerce",
+        utc=True,
+    ).dt.tz_convert(None)
+    df_evolucion = df_evolucion.dropna(subset=["Fecha"])
+
+    if not df_evolucion.empty:
+        df_evolucion["Puntuación global"] = df_evolucion[
+            ["claridad_y_estructura", "rigor_y_argumentacion"]
+        ].mean(axis=1)
+        df_evolucion = df_evolucion.rename(
+            columns={
+                "claridad_y_estructura": "Claridad",
+                "rigor_y_argumentacion": "Agudeza crítica",
+            }
+        ).sort_values("Fecha")
+
+        st.subheader("Evolución de las puntuaciones")
+        st.line_chart(
+            df_evolucion,
+            x="Fecha",
+            y=["Puntuación global", "Claridad", "Agudeza crítica"],
+            color=["#2563EB", "#16A34A", "#EA580C"],
+            height=400,
+        )
+        st.caption(
+            "Azul: puntuación global · Verde: claridad · "
+            "Naranja: agudeza crítica"
+        )
+        st.divider()
+
 # Calculamos una puntuación global para crear los rankings.
 if not df_filtered.empty:
     df_ranking = df_filtered.copy()
