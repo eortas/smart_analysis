@@ -110,32 +110,8 @@ estilos_sel = st.sidebar.multiselect(
     "Estilo:", estilos_disponibles, default=estilos_disponibles
 )
 
-min_c = float(df["claridad_y_estructura"].min())
-max_c = float(df["claridad_y_estructura"].max())
-r_claridad = st.sidebar.slider(
-    "Claridad y estructura:",
-    min_c,
-    max_c,
-    (min_c, max_c),
-    step=0.5,
-)
-
-min_r = float(df["rigor_y_argumentacion"].min())
-max_r = float(df["rigor_y_argumentacion"].max())
-r_rigor = st.sidebar.slider(
-    "Agudeza crítica:",
-    min_r,
-    max_r,
-    (min_r, max_r),
-    step=0.5,
-)
-
-# Aplicamos primero los filtros de estilo y puntuaciones.
-df_filtered = df[
-    (df["estilo_predominante"].isin(estilos_sel))
-    & (df["claridad_y_estructura"].between(*r_claridad))
-    & (df["rigor_y_argumentacion"].between(*r_rigor))
-]
+# Aplicamos el filtro de estilo.
+df_filtered = df[df["estilo_predominante"].isin(estilos_sel)]
 
 # Aplicamos después la búsqueda de texto sobre los resultados anteriores.
 if search_query:
