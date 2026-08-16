@@ -252,10 +252,6 @@ if not df_filtered.empty and "fecha" in df_filtered.columns:
             color=["#2563EB", "#16A34A", "#EA580C"],
             height=400,
         )
-        st.caption(
-            "Azul: puntuación global · Verde: claridad · "
-            "Naranja: agudeza crítica"
-        )
         st.divider()
 
 # Calculamos una puntuación global para crear los rankings.
