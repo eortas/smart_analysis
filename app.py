@@ -98,17 +98,22 @@ if df.empty:
     st.warning("No hay artículos con puntuaciones válidas para mostrar.")
     st.stop()
 
-# Configuramos los filtros de búsqueda en la barra lateral.
-st.sidebar.header("Filtros de búsqueda")
+st.title("📊 Análisis de artículos con IA")
 
-search_query = st.sidebar.text_input("Buscar por título o resumen:")
+# Integramos los filtros en la ventana principal.
+st.subheader("Filtros de búsqueda")
+filtro_busqueda, filtro_estilo = st.columns(2)
+
+with filtro_busqueda:
+    search_query = st.text_input("Buscar por título o resumen:")
 
 estilos_disponibles = sorted(
     df["estilo_predominante"].dropna().unique().tolist()
 )
-estilos_sel = st.sidebar.multiselect(
-    "Estilo:", estilos_disponibles, default=estilos_disponibles
-)
+with filtro_estilo:
+    estilos_sel = st.multiselect(
+        "Estilo:", estilos_disponibles, default=estilos_disponibles
+    )
 
 # Aplicamos el filtro de estilo.
 df_filtered = df[df["estilo_predominante"].isin(estilos_sel)]
@@ -124,8 +129,6 @@ if search_query:
         )
     )
     df_filtered = df_filtered[mask]
-
-st.title("📊 Análisis cualitativo de artículos")
 
 with st.expander("Analizar un borrador nuevo"):
     archivo_borrador = st.file_uploader(
