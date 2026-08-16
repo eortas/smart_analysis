@@ -127,7 +127,7 @@ if search_query:
 
 st.title("📊 Análisis cualitativo de artículos")
 
-with st.expander("✍️ Analizar un borrador nuevo"):
+with st.expander("Analizar un borrador nuevo"):
     archivo_borrador = st.file_uploader(
         "Sube el borrador",
         type=["txt", "md"],
