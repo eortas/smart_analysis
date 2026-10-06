@@ -177,7 +177,7 @@ with st.expander("Analizar un borrador nuevo"):
         # Un análisis nuevo invalida la reescritura anterior, si existía.
         st.session_state.pop("reescritura_borrador", None)
 
-        with st.spinner(f"Analizando el borrador con {MODELO}..."):
+        with st.spinner("Analizando el borrador con IA personalizada..."):
             for clave in cargar_claves():
                 try:
                     resultado = solicitar_analisis(clave, MODELO, prompt)
@@ -243,7 +243,7 @@ with st.expander("Analizar un borrador nuevo"):
             ultimo_error = None
 
             with st.spinner(
-                f"Reescribiendo el borrador con {MODELO_REESCRITURA}..."
+                "Reescribiendo el borrador con IA personalizada..."
             ):
                 try:
                     reescritura = reescribir_borrador(
