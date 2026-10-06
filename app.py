@@ -136,6 +136,19 @@ if search_query:
     )
     df_filtered = df_filtered[mask]
 
+# Ordenamos de la publicación más reciente a la más antigua: el orden del
+# CSV es el del scraping, no el cronológico (la última columna aparece
+# la primera y viceversa).
+if "fecha" in df_filtered.columns:
+    fechas_ord = pd.to_datetime(
+        df_filtered["fecha"], errors="coerce", utc=True
+    )
+    df_filtered = (
+        df_filtered.assign(_fecha_ord=fechas_ord)
+        .sort_values("_fecha_ord", ascending=False, na_position="last")
+        .drop(columns="_fecha_ord")
+    )
+
 with st.expander("Analizar un borrador nuevo"):
     archivo_borrador = st.file_uploader(
         "Sube el borrador",
