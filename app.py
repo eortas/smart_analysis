@@ -233,12 +233,12 @@ with st.expander("Analizar un borrador nuevo"):
 
         st.divider()
 
-        reescribir_borrador = st.button(
+        boton_reescribir = st.button(
             "Reescribir borrador con las mejoras sugeridas",
             disabled=not texto_borrador.strip(),
         )
 
-        if reescribir_borrador:
+        if boton_reescribir:
             titulo = titulo_borrador.strip() or archivo_borrador.name
             ultimo_error = None
 
