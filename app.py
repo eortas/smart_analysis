@@ -1,4 +1,5 @@
 import ast
+import os
 
 import pandas as pd
 import streamlit as st
@@ -58,7 +59,7 @@ def leer_borrador(archivo) -> str:
 
 
 @st.cache_data
-def cargar_datos(filepath: str) -> pd.DataFrame:
+def cargar_datos(filepath: str, _mtime: float = 0.0) -> pd.DataFrame:
     df = pd.read_csv(filepath)
 
     # Convertimos las columnas de texto a listas para mostrarlas como viñetas.
@@ -75,7 +76,9 @@ def cargar_datos(filepath: str) -> pd.DataFrame:
 
 
 try:
-    df = cargar_datos(ARCHIVO_CSV)
+    # Incluimos la fecha de modificación para invalidar el caché cuando el CSV
+    # se regenera (si no, Streamlit seguiría mostrando los datos antiguos).
+    df = cargar_datos(ARCHIVO_CSV, os.path.getmtime(ARCHIVO_CSV))
 except FileNotFoundError:
     st.error(f"No se encontró '{ARCHIVO_CSV}'. Genera el archivo previamente.")
     st.stop()
@@ -191,6 +194,11 @@ with st.expander("Analizar un borrador nuevo"):
         st.markdown(
             f"**Resumen:** {resultado_borrador['resumen_tematico']}"
         )
+
+        if resultado_borrador.get("critica_editorial"):
+            st.markdown(
+                f"**Crítica editorial:** {resultado_borrador['critica_editorial']}"
+            )
 
         fortalezas, mejoras = st.columns(2)
 
@@ -327,6 +335,11 @@ for _, row in df_filtered.iterrows():
     with st.expander(header_text):
         st.caption(f"Fecha: {fecha} | Estilo: {row['estilo_predominante']}")
         st.markdown(f"**Resumen:** {row['resumen_tematico']}")
+
+        if "critica_editorial" in df.columns and pd.notna(
+            row.get("critica_editorial")
+        ):
+            st.markdown(f"**Crítica editorial:** {row['critica_editorial']}")
 
         c1, c2 = st.columns(2)
         with c1:

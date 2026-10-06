@@ -10,13 +10,14 @@ from dotenv import load_dotenv
 ARCHIVO_ENTRADA = "articulos_jaione_sanz.csv"
 ARCHIVO_SALIDA = "evaluacion_articulos_jaione_sanz.csv"
 URL_API = "https://api.mistral.ai/v1/chat/completions"
-VERSION_CRITERIO = "opinion_v3"
+VERSION_CRITERIO = "opinion_v4"
 
-MODELO = "mistral-large-latest"
+MODELO = "ministral-8b-latest"
 
 CAMPOS_ANALISIS = [
     "resumen_tematico",
     "estilo_predominante",
+    "critica_editorial",
     "claridad_y_estructura",
     "rigor_y_argumentacion",
     "puntos_fuertes",
@@ -40,10 +41,14 @@ def crear_prompt(titulo: str, texto: str) -> str:
     return f"""
 Analiza el siguiente artículo de opinión en español.
 
+Valora el artículo como un editor experto en periodismo y en comunicación.
+Sé estrictamente profesional y valora los artículos de opinión con ese rigor.
+
 Devuelve solamente un objeto JSON con esta estructura exacta:
 {{
   "resumen_tematico": "Resumen neutral de 2 o 3 frases",
   "estilo_predominante": "Una categoría breve",
+  "critica_editorial": "2 o 3 frases con los fallos más importantes del texto",
   "claridad_y_estructura": 6.5,
   "rigor_y_argumentacion": 7.5,
   "puntos_fuertes": ["Punto concreto", "Punto concreto"],
@@ -54,6 +59,10 @@ Las puntuaciones deben estar entre 1 y 10 y utilizar incrementos de 0.5.
 Usa activamente los medios puntos cuando la valoración quede entre dos niveles.
 Evalúa únicamente el contenido recibido y no inventes datos externos.
 Incluye entre 2 y 4 elementos en cada lista.
+
+Antes de puntuar, escribe "critica_editorial" con los fallos más importantes
+que encuentres en el texto. Si no encuentras fallos, relee: siempre los hay.
+Deja que esa crítica condicione después las puntuaciones.
 
 Para "claridad_y_estructura", valora la claridad de la tesis, la organización
 de las ideas, el ritmo y la facilidad de lectura.
@@ -69,17 +78,50 @@ satírico, crítico, reflexivo, provocador, humorístico o combativo.
 
 Los puntos fuertes y de mejora deben juzgar el texto como artículo de opinión.
 
-Utiliza toda la escala y evita concentrar las notas entre 7 y 9:
-- 9 a 10: pieza excepcional, muy original y prácticamente sin debilidades.
-- 7 a 8.5: pieza buena, pero con limitaciones claras.
-- 5 a 6.5: pieza correcta o irregular, con virtudes y defectos importantes.
-- 3 a 4.5: pieza débil, superficial, repetitiva o poco convincente.
-- 1 a 2.5: pieza muy deficiente o incoherente.
+Calibración de notas (escala de 1 a 10, siempre en saltos de 0.5).
+Como editor experto que juzga una colección de unas 90 columnas publicadas,
+esta es la distribución que cabe esperar; no todas las piezas merecen nota de
+publicación impecable:
+- 9.5-10 (unas 3 o 4 de cada 90): pieza excepcional, brillante, casi sin
+  debilidades. Regálala solo a lo verdaderamente extraordinario.
+- 8.5-9 (unas 15 de cada 90): pieza muy buena, con virtudes claras y fallos
+  menores.
+- 7.5-8 (unas 27 de cada 90): pieza sólida y correcta, con limitaciones
+  puntuales.
+- 6-7 (unas 22 de cada 90): pieza irregular o plana; se lee sin disgustar,
+  pero no deja huella.
+- 4.5-5.5 (unas 13 de cada 90): pieza floja, tesis débil, tópicos o desarrollo
+  perezoso.
+- 1-4 (unas 8 de cada 90): suspenso claro: incoherente, superficial o
+  directamente insostenible.
+
+Reglas duras:
+- Nunca otorgues más de 8 sin poder citar al menos dos virtudes excepcionales
+  y específicas del propio texto.
+- Si el artículo carece de tesis clara, se apoya en tópicos de manual o repite
+  ideas, su nota máxima es 6.5.
+- Si además es superficial, incoherente o poco convincente, suspéndelo (5 o
+  menos): no tengas reparo en dar suspenso a quien no cumple su nivel.
+- Tampoco seas rancano: si un artículo es excepcional, puntúalo con 9.5 o 10.
+- Si todas tus notas acaban entre 8 y 9, no estás ejerciendo de editor.
+
+Ejemplos de calibración (compara el artículo que recibes con estos casos):
+- "Otra vez los políticos prometen lo mismo. Es una vergüenza cómo nos toman
+  por tontos. Los ciudadanos merecemos respeto." -> claridad 4.5, rigor 4.0
+  (lugar común puro, sin tesis ni desarrollo).
+- "Dicen que el tiempo lo cura todo, pero nadie explica por qué el reloj de
+  la sala de espera va más lento. Corremos tanto que olvidamos para qué." ->
+  claridad 6.5, rigor 6.5 (arranque prometedor, desarrollo deslabazado).
+- "El 'sí pero no' del Gobierno ante la vivienda revela su prioridad real: el
+  suelo no es hogar, es activo. Mientras expropiar suene a palabra tabú, el
+  alquiler seguirá siendo una carrera de obstáculos." ->
+  claridad 8.0, rigor 8.5 (tesis clara, ilustración eficaz, ahonda poco).
+- Pieza con tesis original, ejemplos concretos, cierre redondo, ironía
+  precisa y sin un solo párrafo muerto -> claridad 9.5, rigor 9.5.
 
 Una publicación profesional no merece automáticamente una nota alta. Penaliza
 los tópicos, la reiteración, la falta de una tesis clara, los saltos lógicos,
 la ironía forzada, la crítica superficial y los finales poco efectivos.
-Los valores 9 y 10 deben ser poco frecuentes.
 
 Título: {titulo}
 
@@ -111,7 +153,7 @@ def solicitar_analisis(
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.1,
+        "temperature": 0.9,
         "response_format": {"type": "json_object"},
     }
 
@@ -267,7 +309,7 @@ def ejecutar_analisis():
         if ultimo_error:
             print(f"No se pudo analizar el artículo: {ultimo_error}")
 
-        time.sleep(2)
+        time.sleep(4)
 
     print(f"CSV generado: {ARCHIVO_SALIDA}")
 
