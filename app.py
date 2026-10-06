@@ -6,8 +6,11 @@ import streamlit as st
 
 from analizar_articulos import (
     MODELO,
+    MODELO_REESCRITURA,
     cargar_claves,
+    claves_para_modelo,
     crear_prompt,
+    reescribir_borrador,
     solicitar_analisis,
     validar_analisis,
 )
@@ -158,6 +161,9 @@ with st.expander("Analizar un borrador nuevo"):
         prompt = crear_prompt(titulo, texto_borrador)
         ultimo_error = None
 
+        # Un análisis nuevo invalida la reescritura anterior, si existía.
+        st.session_state.pop("reescritura_borrador", None)
+
         with st.spinner(f"Analizando el borrador con {MODELO}..."):
             for clave in cargar_claves():
                 try:
@@ -211,6 +217,79 @@ with st.expander("Analizar un borrador nuevo"):
             st.markdown("**Puntos de mejora:**")
             for punto in resultado_borrador["puntos_mejora"]:
                 st.markdown(f"- {punto}")
+
+        st.divider()
+
+        reescribir_borrador = st.button(
+            "Reescribir borrador con las mejoras sugeridas",
+            disabled=not texto_borrador.strip(),
+        )
+
+        if reescribir_borrador:
+            titulo = titulo_borrador.strip() or archivo_borrador.name
+            ultimo_error = None
+
+            with st.spinner(
+                f"Reescribiendo el borrador con {MODELO_REESCRITURA}..."
+            ):
+                try:
+                    reescritura = reescribir_borrador(
+                        claves_para_modelo(MODELO_REESCRITURA),
+                        MODELO_REESCRITURA,
+                        titulo,
+                        texto_borrador,
+                        resultado_borrador,
+                    )
+                    st.session_state["reescritura_borrador"] = reescritura
+                    ultimo_error = None
+                except Exception as error:
+                    ultimo_error = error
+
+            if ultimo_error:
+                st.error(f"No se pudo reescribir el borrador: {ultimo_error}")
+
+        reescritura_borrador = st.session_state.get("reescritura_borrador")
+
+        if reescritura_borrador:
+            st.markdown("### Borrador reescrito")
+
+            if reescritura_borrador.get("aviso_extension"):
+                st.warning(reescritura_borrador["aviso_extension"])
+
+            st.markdown("**Cambios aplicados:**")
+            for cambio in reescritura_borrador["cambios_realizados"]:
+                st.markdown(f"- {cambio}")
+
+            col_original, col_reescrito = st.columns(2)
+
+            with col_original:
+                st.markdown("**Original**")
+                st.text_area(
+                    "Texto original",
+                    texto_borrador,
+                    height=420,
+                    disabled=True,
+                    label_visibility="collapsed",
+                )
+
+            with col_reescrito:
+                st.markdown("**Reescrito**")
+                st.text_area(
+                    "Texto reescrito",
+                    reescritura_borrador["reescritura"],
+                    height=420,
+                    disabled=True,
+                    label_visibility="collapsed",
+                )
+
+            st.download_button(
+                "Descargar borrador reescrito",
+                data=reescritura_borrador["reescritura"],
+                file_name=(
+                    f"{titulo_borrador.strip() or 'borrador'}_reescrito.md"
+                ),
+                mime="text/markdown",
+            )
 
 st.divider()
 

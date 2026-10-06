@@ -10,9 +10,16 @@ from dotenv import load_dotenv
 ARCHIVO_ENTRADA = "articulos_jaione_sanz.csv"
 ARCHIVO_SALIDA = "evaluacion_articulos_jaione_sanz.csv"
 URL_API = "https://api.mistral.ai/v1/chat/completions"
+URL_API_GROQ = "https://api.groq.com/openai/v1/chat/completions"
 VERSION_CRITERIO = "opinion_v4"
 
 MODELO = "ministral-8b-latest"
+
+# Modelo usado para REESCRIBIR borradores (independiente de la evaluación):
+# la serie de puntuaciones opinion_v4 debe mantenerse siempre en MODELO.
+# Elegido por prueba A/B (vs qwen3.8-27b y gpt-oss-20b): mejor conservación
+# de la voz del autor y estructura de columna. Ver resultados en el historial.
+MODELO_REESCRITURA = "openai/gpt-oss-120b"
 
 CAMPOS_ANALISIS = [
     "resumen_tematico",
@@ -35,6 +42,30 @@ def cargar_claves() -> list[str]:
         raise ValueError("No se encontraron MISTRAL1 o MISTRAL2 en el archivo .env.")
 
     return claves
+
+
+def cargar_claves_groq() -> list[str]:
+    load_dotenv()
+
+    clave = os.getenv("GROQ_API_KEY")
+    if not clave:
+        raise ValueError("No se encontró GROQ_API_KEY en el archivo .env.")
+
+    return [clave]
+
+
+def es_modelo_groq(modelo: str) -> bool:
+    """True si el ID corresponde a un modelo alojado en Groq."""
+    return modelo.startswith(
+        ("openai/", "qwen/", "meta-llama/", "allam-", "moonshotai/")
+    )
+
+
+def claves_para_modelo(modelo: str) -> list[str]:
+    """Devuelve las claves adecuadas para el proveedor del modelo."""
+    if es_modelo_groq(modelo):
+        return cargar_claves_groq()
+    return cargar_claves()
 
 
 def crear_prompt(titulo: str, texto: str) -> str:
@@ -135,11 +166,13 @@ def solicitar_analisis(
     modelo: str,
     prompt: str,
     max_intentos: int = 4,
+    max_tokens: int | None = None,
 ) -> dict:
     headers = {
         "Authorization": f"Bearer {clave}",
         "Content-Type": "application/json",
     }
+    url = URL_API_GROQ if es_modelo_groq(modelo) else URL_API
 
     datos = {
         "model": modelo,
@@ -157,9 +190,13 @@ def solicitar_analisis(
         "response_format": {"type": "json_object"},
     }
 
+    # Las reescrituras pueden ser largas: permitimos subir el toque de salida.
+    if max_tokens:
+        datos["max_tokens"] = max_tokens
+
     for intento in range(1, max_intentos + 1):
         respuesta = requests.post(
-            URL_API,
+            url,
             headers=headers,
             json=datos,
             timeout=120,
@@ -167,7 +204,15 @@ def solicitar_analisis(
 
         if respuesta.status_code == 200:
             contenido = respuesta.json()["choices"][0]["message"]["content"]
-            return json.loads(contenido)
+            try:
+                return json.loads(contenido)
+            except json.JSONDecodeError:
+                # El modelo pequeño a veces emite JSON mal formado: reintentamos.
+                if intento < max_intentos:
+                    print("Respuesta no válida en JSON. Reintentando.")
+                    time.sleep(2)
+                    continue
+                raise
 
         if respuesta.status_code == 429 and intento < max_intentos:
             espera = int(respuesta.headers.get("Retry-After", intento * 10))
@@ -175,19 +220,51 @@ def solicitar_analisis(
             time.sleep(espera)
             continue
 
+        # Groq valida el JSON en servidor y a veces rechaza una generación
+        # por azar de la muestra: merece un reintento como el 429.
+        if (
+            "json_validate_failed" in respuesta.text
+            and intento < max_intentos
+        ):
+            print("El proveedor rechazó la generación JSON. Reintentando.")
+            time.sleep(2)
+            continue
+
         mensaje = respuesta.text[:500]
         raise requests.HTTPError(
-            f"Mistral devolvió {respuesta.status_code}: {mensaje}",
+            f"El proveedor devolvió {respuesta.status_code}: {mensaje}",
             response=respuesta,
         )
 
     raise RuntimeError("No se pudo obtener el análisis después de varios intentos.")
 
 
+def _a_texto(valor) -> str:
+    """Coacciona campos de texto: el modelo a veces devuelve dicts o listas."""
+    if isinstance(valor, str):
+        texto = valor.strip()
+        if texto.startswith("[") and texto.endswith("]"):
+            try:
+                interno = json.loads(texto)
+            except (json.JSONDecodeError, ValueError):
+                interno = None
+            if isinstance(interno, list):
+                return "; ".join(str(elemento) for elemento in interno)
+        return valor
+    if isinstance(valor, list):
+        return "; ".join(str(elemento) for elemento in valor)
+    if isinstance(valor, dict):
+        return " ".join(str(valor_campo) for valor_campo in valor.values())
+    return str(valor)
+
+
 def validar_analisis(analisis: dict) -> dict:
     faltantes = [campo for campo in CAMPOS_ANALISIS if campo not in analisis]
     if faltantes:
         raise ValueError(f"Faltan campos en el análisis: {', '.join(faltantes)}")
+
+    for campo in ["resumen_tematico", "estilo_predominante", "critica_editorial"]:
+        analisis[campo] = _a_texto(analisis[campo])
 
     # Redondeamos las notas al medio punto más cercano.
     claridad = round(float(analisis["claridad_y_estructura"]) * 2) / 2
@@ -201,6 +278,162 @@ def validar_analisis(analisis: dict) -> dict:
             analisis[campo] = [str(analisis[campo])]
 
     return analisis
+
+
+def crear_prompt_reescritura(titulo: str, texto: str, analisis: dict) -> str:
+    fortalezas = "\n".join(
+        f"- {punto}" for punto in analisis.get("puntos_fuertes", [])
+    )
+    mejoras = "\n".join(
+        f"- {punto}" for punto in analisis.get("puntos_mejora", [])
+    )
+    critica = analisis.get("critica_editorial", "")
+
+    return f"""
+Reescribe el siguiente borrador de artículo de opinión aplicando las mejoras
+señaladas en su evaluación editorial, con criterio de editor experto en
+periodismo y en comunicación. Sé estrictamente profesional.
+
+Reglas:
+- Corrige los fallos indicados en la crítica editorial y aplica cada uno de
+  los puntos de mejora.
+- Conserva la voz, el tono y la extensión aproximada del texto original.
+  No reescribas desde cero: edita con criterio.
+- Extensión obligatoria: la reescritura debe tener entre
+  {int(len(texto) * 0.85):,} y {int(len(texto) * 1.15):,} caracteres
+  (el original tiene {len(texto):,}). No amplíes el texto: desarrolla las
+  ideas dentro de esa extensión.
+- Mantén los puntos fuertes; no los diluyas ni los elimines.
+- No inventes datos ni citas nuevas. Si falta información, trabaja con lo que
+  el propio texto aporta.
+- Devuelve un texto pulido, listo para publicar.
+
+El JSON debe ser válido: escapa las comillas dobles y los saltos de línea
+dentro de los valores de texto. El campo "reescritura" contiene el texto
+completo, sin recortar.
+
+Devuelve solamente un objeto JSON con esta estructura exacta:
+{{
+  "reescritura": "El texto completo reescrito",
+  "cambios_realizados": ["Cambio concreto aplicado", "Cambio concreto aplicado"]
+}}
+
+"cambios_realizados" debe listar de 3 a 6 cambios concretos (qué se corrigió
+y por qué), en frases breves.
+
+Título: {titulo}
+
+Crítica editorial de la evaluación:
+{critica}
+
+Puntos fuertes a conservar:
+{fortalezas}
+
+Puntos de mejora a aplicar:
+{mejoras}
+
+Borrador original:
+{texto}
+""".strip()
+
+
+def validar_reescritura(
+    reescritura: dict,
+    texto_original: str = "",
+    estricto: bool = True,
+) -> dict:
+    faltantes = [
+        campo for campo in ("reescritura", "cambios_realizados")
+        if campo not in reescritura
+    ]
+    if faltantes:
+        raise ValueError(
+            f"Faltan campos en la reescritura: {', '.join(faltantes)}"
+        )
+
+    texto = str(reescritura["reescritura"]).strip()
+    if not texto:
+        raise ValueError("La reescritura llegó vacía.")
+
+    # Control de truncado o expansión descontrolada: la reescritura debe
+    # acercarse a la extensión del original (recorrido 0.5x–1.6x).
+    # Con estricto=False solo se valida la estructura (para el fallback).
+    if texto_original and estricto:
+        if len(texto) < len(texto_original) * 0.5:
+            raise ValueError(
+                "La reescritura es demasiado corta respecto al original; "
+                "probablemente llegó incompleta."
+            )
+        if len(texto) > len(texto_original) * 1.6:
+            raise ValueError(
+                "La reescritura se expandió demasiado respecto al original; "
+                "se pidió conservar la extensión."
+            )
+
+    cambios = reescritura["cambios_realizados"]
+    if not isinstance(cambios, list):
+        cambios = [str(cambios)]
+    reescritura["reescritura"] = texto
+    reescritura["cambios_realizados"] = [str(cambio) for cambio in cambios]
+
+    return reescritura
+
+
+def reescribir_borrador(
+    claves: list[str],
+    modelo: str,
+    titulo: str,
+    texto: str,
+    analisis: dict,
+    max_rondas: int = 2,
+) -> dict:
+    """Reescribe el borrador con reintentos sobre todas las claves.
+
+    Si tras varias rondas el modelo se empeña en desbordar la extensión
+    pedida, devuelve el mejor intento con un campo "aviso_extension" para
+    que el dashboard lo muestre en vez de fallar del todo.
+    """
+    prompt = crear_prompt_reescritura(titulo, texto, analisis)
+    ultimo_error = None
+    mejor_excedido = None
+    mejor_ratio = float("inf")
+
+    for _ in range(max_rondas):
+        for clave in claves:
+            try:
+                crudo = solicitar_analisis(
+                    clave, modelo, prompt, max_tokens=6000
+                )
+            except Exception as error:
+                ultimo_error = error
+                continue
+
+            try:
+                return validar_reescritura(crudo, texto, estricto=True)
+            except ValueError as error:
+                ultimo_error = error
+                try:
+                    posible = validar_reescritura(
+                        crudo, texto, estricto=False
+                    )
+                    ratio = len(posible["reescritura"]) / max(len(texto), 1)
+                    if ratio < mejor_ratio:
+                        mejor_ratio = ratio
+                        mejor_excedido = posible
+                except ValueError:
+                    pass
+
+    if mejor_excedido is not None:
+        mejor_excedido["aviso_extension"] = (
+            f"La reescritura quedó un {int((mejor_ratio - 1) * 100):+d}% "
+            "más larga de lo pedido: revisa si te conviene recortarla."
+        )
+        return mejor_excedido
+
+    raise ultimo_error or RuntimeError(
+        "No se pudo reescribir el borrador."
+    )
+
 
 
 def seleccionar_modelo(claves: list[str]) -> tuple[str, str]:
