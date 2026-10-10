@@ -7,6 +7,8 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+from limpieza_texto import extraer_cuerpo, limpiar_texto
+
 
 URL_AUTORA = "https://cronicavasca.elespanol.com/autor/jaione-sanz/"
 ARCHIVO_SALIDA = "articulos_jaione_sanz.csv"
@@ -108,12 +110,10 @@ def extraer_articulo(url: str) -> dict:
         etiqueta_resumen = soup.select_one('meta[name="description"]')
         resumen = etiqueta_resumen.get("content", "") if etiqueta_resumen else ""
 
-    texto = datos_json.get("articleBody", "")
-    if not texto:
-        parrafos = soup.select("article p") or soup.select("main p")
-        texto = "\n".join(
-            parrafo.get_text(" ", strip=True) for parrafo in parrafos
-        )
+    # El HTML se prioriza sobre el articleBody del JSON-LD: este último
+    # incluye las citas destacadas (pull quotes) duplicadas, y el selector
+    # de párrafos del cuerpo las excluye.
+    texto = extraer_cuerpo(soup, datos_json.get("articleBody", ""))
 
     return {
         "titulo": titulo,
@@ -130,7 +130,17 @@ def cargar_articulos_anteriores() -> list[dict]:
         return []
 
     df_anterior = pd.read_csv(ARCHIVO_SALIDA)
-    return df_anterior.to_dict("records")
+    articulos = df_anterior.to_dict("records")
+
+    # Reaplicamos la limpieza a los textos guardados antes de corregir el
+    # scraper: arrastraban las citas destacadas duplicadas.
+    for articulo in articulos:
+        texto = articulo.get("texto")
+        if isinstance(texto, str):
+            articulo["texto"] = limpiar_texto(texto)
+            articulo["longitud_caracteres"] = len(articulo["texto"])
+
+    return articulos
 
 
 def guardar_articulos(articulos: list[dict]):

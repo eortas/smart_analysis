@@ -6,20 +6,23 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
+from limpieza_texto import limpiar_texto
+
 
 ARCHIVO_ENTRADA = "articulos_jaione_sanz.csv"
 ARCHIVO_SALIDA = "evaluacion_articulos_jaione_sanz.csv"
 URL_API = "https://api.mistral.ai/v1/chat/completions"
 URL_API_GROQ = "https://api.groq.com/openai/v1/chat/completions"
-VERSION_CRITERIO = "opinion_v4"
 
-MODELO = "ministral-8b-latest"
+# La serie opinion_v4 se evaluó con ministral-8b (Mistral). Desde
+# opinion_v5 evaluación y reescritura usan el mismo modelo de Groq, para
+# que la crítica y la reescritura deriven del mismo criterio editorial.
+VERSION_CRITERIO = "opinion_v5"
 
-# Modelo usado para REESCRIBIR borradores (independiente de la evaluación):
-# la serie de puntuaciones opinion_v4 debe mantenerse siempre en MODELO.
-# Elegido por prueba A/B (vs qwen3.8-27b y gpt-oss-20b): mejor conservación
-# de la voz del autor y estructura de columna. Ver resultados en el historial.
-MODELO_REESCRITURA = "openai/gpt-oss-120b"
+MODELO = "openai/gpt-oss-120b"
+
+# Reescritura de borradores: mismo modelo que la evaluación (ver arriba).
+MODELO_REESCRITURA = MODELO
 
 CAMPOS_ANALISIS = [
     "resumen_tematico",
@@ -45,13 +48,23 @@ def cargar_claves() -> list[str]:
 
 
 def cargar_claves_groq() -> list[str]:
+    """Carga las claves de Groq en orden, para alternarlas por artículo."""
     load_dotenv()
 
-    clave = os.getenv("GROQ_API_KEY")
-    if not clave:
-        raise ValueError("No se encontró GROQ_API_KEY en el archivo .env.")
+    claves = [os.getenv("GROQ1"), os.getenv("GROQ2")]
+    claves = [clave for clave in claves if clave]
 
-    return [clave]
+    if not claves:
+        # Compatibilidad con instalaciones con una única clave.
+        clave_unica = os.getenv("GROQ_API_KEY")
+        claves = [clave_unica] if clave_unica else []
+
+    if not claves:
+        raise ValueError(
+            "No se encontraron GROQ1, GROQ2 ni GROQ_API_KEY en el .env."
+        )
+
+    return claves
 
 
 def es_modelo_groq(modelo: str) -> bool:
@@ -491,7 +504,9 @@ def ejecutar_analisis():
             f"No existe '{ARCHIVO_ENTRADA}'. Ejecuta primero scraper.py."
         )
 
-    claves = cargar_claves()
+    # Con un modelo de Groq carga las claves GROQ1/GROQ2 (y con un modelo
+    # de Mistral, MISTRAL1/MISTRAL2).
+    claves = claves_para_modelo(MODELO)
     modelo, clave_principal = seleccionar_modelo(claves)
     claves_ordenadas = [clave_principal] + [
         clave for clave in claves if clave != clave_principal
@@ -510,7 +525,11 @@ def ejecutar_analisis():
 
     for numero, (_, articulo) in enumerate(pendientes.iterrows(), start=1):
         print(f"Analizando {numero}/{len(pendientes)}: {articulo['titulo']}")
-        prompt = crear_prompt(articulo["titulo"], articulo["texto"])
+        # Los textos guardados antes de corregir el scraper incluían los
+        # fragmentos destacados (pull quotes) duplicados; sin esta limpieza
+        # el modelo interpreta la repetición como un fallo del artículo.
+        texto = limpiar_texto(articulo["texto"])
+        prompt = crear_prompt(articulo["titulo"], texto)
         ultimo_error = None
 
         # Alternamos la clave preferida y conservamos la otra como respaldo.
@@ -525,6 +544,8 @@ def ejecutar_analisis():
                 analisis = solicitar_analisis(clave, modelo, prompt)
                 analisis = validar_analisis(analisis)
                 resultado = articulo.to_dict() | analisis
+                resultado["texto"] = texto
+                resultado["longitud_caracteres"] = len(texto)
                 resultado["version_criterio"] = VERSION_CRITERIO
                 resultados.append(resultado)
                 guardar_resultados(resultados)

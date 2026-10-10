@@ -7,7 +7,6 @@ import streamlit as st
 from analizar_articulos import (
     MODELO,
     MODELO_REESCRITURA,
-    cargar_claves,
     claves_para_modelo,
     crear_prompt,
     reescribir_borrador,
@@ -178,7 +177,7 @@ with st.expander("Analizar un borrador nuevo"):
         st.session_state.pop("reescritura_borrador", None)
 
         with st.spinner("Analizando el borrador con IA personalizada..."):
-            for clave in cargar_claves():
+            for clave in claves_para_modelo(MODELO):
                 try:
                     resultado = solicitar_analisis(clave, MODELO, prompt)
                     resultado = validar_analisis(resultado)
