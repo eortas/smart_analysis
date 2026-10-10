@@ -14,12 +14,11 @@ ARCHIVO_SALIDA = "evaluacion_articulos_jaione_sanz.csv"
 URL_API = "https://api.mistral.ai/v1/chat/completions"
 URL_API_GROQ = "https://api.groq.com/openai/v1/chat/completions"
 
-# La serie opinion_v4 se evaluó con ministral-8b (Mistral). Desde
-# opinion_v5 evaluación y reescritura usan el mismo modelo de Groq, para
-# que la crítica y la reescritura deriven del mismo criterio editorial.
-VERSION_CRITERIO = "opinion_v5"
+# Evaluamos y reescribimos con qwen/qwen3.8-27b en Groq, manteniendo
+# alineados el criterio editorial de análisis y la propuesta de reescritura.
+VERSION_CRITERIO = "opinion_qwen"
 
-MODELO = "openai/gpt-oss-120b"
+MODELO = "qwen/qwen3.8-27b"
 
 # Reescritura de borradores: mismo modelo que la evaluación (ver arriba).
 MODELO_REESCRITURA = MODELO
@@ -48,20 +47,23 @@ def cargar_claves() -> list[str]:
 
 
 def cargar_claves_groq() -> list[str]:
-    """Carga las claves de Groq en orden, para alternarlas por artículo."""
+    """Carga todas las claves de Groq disponibles para alternarlas por artículo."""
     load_dotenv()
 
-    claves = [os.getenv("GROQ1"), os.getenv("GROQ2")]
-    claves = [clave for clave in claves if clave]
-
-    if not claves:
-        # Compatibilidad con instalaciones con una única clave.
-        clave_unica = os.getenv("GROQ_API_KEY")
-        claves = [clave_unica] if clave_unica else []
+    candidatas = [
+        os.getenv("GROQ1"),
+        os.getenv("GROQ2"),
+        os.getenv("GROQ3"),
+        os.getenv("GROQ_API_KEY"),
+    ]
+    claves = []
+    for clave in candidatas:
+        if clave and clave not in claves:
+            claves.append(clave)
 
     if not claves:
         raise ValueError(
-            "No se encontraron GROQ1, GROQ2 ni GROQ_API_KEY en el .env."
+            "No se encontraron claves de Groq (GROQ1, GROQ2, GROQ3 o GROQ_API_KEY) en el .env."
         )
 
     return claves
@@ -491,6 +493,17 @@ def guardar_resultados(resultados: list[dict]):
     if not df_resultados.empty and "url" in df_resultados.columns:
         df_resultados = df_resultados.drop_duplicates(subset="url", keep="last")
 
+    if not df_resultados.empty and "fecha" in df_resultados.columns:
+        # Ordenamos los resultados por fecha de forma descendente
+        fechas_ord = pd.to_datetime(
+            df_resultados["fecha"], errors="coerce", utc=True
+        )
+        df_resultados = (
+            df_resultados.assign(_fecha_ord=fechas_ord)
+            .sort_values("_fecha_ord", ascending=False, na_position="last")
+            .drop(columns="_fecha_ord")
+        )
+
     df_resultados.to_csv(
         ARCHIVO_SALIDA,
         index=False,
@@ -521,6 +534,18 @@ def ejecutar_analisis():
     }
 
     pendientes = df[~df["url"].isin(urls_analizadas)]
+
+    if not pendientes.empty and "fecha" in pendientes.columns:
+        # Priorizamos el análisis de los artículos más recientes
+        fechas_ord = pd.to_datetime(
+            pendientes["fecha"], errors="coerce", utc=True
+        )
+        pendientes = (
+            pendientes.assign(_fecha_ord=fechas_ord)
+            .sort_values("_fecha_ord", ascending=False, na_position="last")
+            .drop(columns="_fecha_ord")
+        )
+
     print(f"Artículos pendientes: {len(pendientes)}")
 
     for numero, (_, articulo) in enumerate(pendientes.iterrows(), start=1):

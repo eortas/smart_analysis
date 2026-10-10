@@ -149,6 +149,15 @@ def guardar_articulos(articulos: list[dict]):
     if not df.empty and "url" in df.columns:
         df = df.drop_duplicates(subset="url", keep="last")
 
+    if not df.empty and "fecha" in df.columns:
+        # Ordenamos de más reciente a más antiguo para facilitar el análisis
+        fechas_ord = pd.to_datetime(df["fecha"], errors="coerce", utc=True)
+        df = (
+            df.assign(_fecha_ord=fechas_ord)
+            .sort_values("_fecha_ord", ascending=False, na_position="last")
+            .drop(columns="_fecha_ord")
+        )
+
     df.to_csv(ARCHIVO_SALIDA, index=False, encoding="utf-8-sig")
 
 

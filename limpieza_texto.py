@@ -18,27 +18,27 @@ from bisect import bisect_left
 
 # Un fragmento repetido debe medir al menos estos caracteres normalizados
 # (sin espacios ni puntuación) para considerarse una cita duplicada.
-MINIMO_DUPLICADO = 60
+MINIMO_DUPLICADO = 35
 
 # Distancia máxima entre la primera copia y su repetición: las citas
 # destacadas van pegadas al párrafo que las contiene, pero entre medias
 # puede haber un párrafo entero, así que se da holgura. Con un mínimo de
-# 60 caracteres repetidos exactamente, una repetición real de un texto
+# 35 caracteres repetidos exactamente, una repetición real de un texto
 # propio sigue siendo prácticamente imposible fuera de las citas.
 MARGEN_REPETICION = 6000
 
 # Máximo de pasadas de limpieza por texto. Cada pasada elimina una copia
-# suelta; una cita destacada larga puede estar partida en varias frangas,
+# suelta; una cita destacada larga puede estar partida en varias franjas,
 # así que se permite holgura (el bucle se corta en cuanto no hay cambios).
 MAX_PASADAS = 20
 
 # Etiquetas cuyo contenido nunca forma parte del cuerpo del artículo.
 BLOQUES_EXCLUIDOS = ("blockquote", "aside", "figure", "figcaption")
 
-# Clases de ancestros que marcan bloques ajenos al cuerpo del artículo.
+# Clases de ancestros o contenedores que marcan bloques ajenos al cuerpo del artículo.
 CLASES_EXCLUIDAS = re.compile(
     r"caption|comment|sidebar|newsletter|related|advert|promo|social|share"
-    r"|breadcrumb|most-read",
+    r"|breadcrumb|most-read|quote|destacado|pullquote",
     re.IGNORECASE,
 )
 
@@ -143,11 +143,20 @@ def extraer_parrafos(soup) -> list[str]:
     if contenedor is None:
         return []
 
+    # En Crónica Vasca / El Español los párrafos del cuerpo usan la clase "paragraph",
+    # mientras que las citas destacadas van en blockquote.content__blockquote.
+    parrafos_candidatos = contenedor.select("p.paragraph")
+    if len(parrafos_candidatos) < 3:
+        parrafos_candidatos = contenedor.select("p")
+
     parrafos = []
-    for parrafo in contenedor.select("p"):
+    for parrafo in parrafos_candidatos:
         if parrafo.find_parent(BLOQUES_EXCLUIDOS) is not None:
             continue
         if parrafo.find_parent(class_=CLASES_EXCLUIDAS) is not None:
+            continue
+        clases_p = parrafo.get("class") or []
+        if any(CLASES_EXCLUIDAS.search(c) for c in clases_p):
             continue
         texto = parrafo.get_text(" ", strip=True)
         if texto:
@@ -160,14 +169,15 @@ def extraer_cuerpo(soup, article_body: str = "") -> str:
     """Obtiene el cuerpo limpio del artículo.
 
     Usa el HTML cuando ofrece párrafos suficientes (es la fuente más fiable,
-    ya que las citas destacadas no comparten clase con los párrafos) y el
+    ya que las citas destacadas quedan fuera del cuerpo) y el
     ``articleBody`` del JSON-LD como respaldo; en ambos casos aplica
     ``limpiar_texto`` por si quedara alguna repetición.
     """
     parrafos = extraer_parrafos(soup)
-    texto_html = "\n".join(parrafos)
+    texto_html = "\n\n".join(parrafos)
 
     if len(parrafos) >= 3 or not (article_body or "").strip():
         return limpiar_texto(texto_html)
 
     return limpiar_texto(article_body)
+

@@ -109,6 +109,26 @@ def probar_cuerpo_respaldo_json_ld():
     assert cuerpo.count("Fragmento destacado") == 1, cuerpo
 
 
+def probar_html_cronica_vasca_real():
+    """Estructura real de Crónica Vasca con blockquotes intercalados (casos imbéciles y Confiésate)."""
+    html = """
+    <div class="article-body__content">
+      <p class="paragraph" id="paragraph_5">Hasta que un día, oh, sorpresa, descubres que una cosa es tener opciones y otra muy diferente elegir.</p>
+      <blockquote class="content__blockquote"><p>Y aun así siempre habrá imbéciles en <em>primetime</em>, y por contagio en la barra del bar, responsabilizando al desgraciado de turno de que las cosas no le vayan mejor</p></blockquote>
+      <p class="paragraph" id="paragraph_6">Y aun así siempre habrá imbéciles en <em>primetime</em>, y por contagio en la barra del bar, responsabilizando al desgraciado de turno de que las cosas no le vayan mejor. Supongo que es lo que tiene confundir buena suerte, o una descomunal falta de escrúpulos, con talento y responsabilidad.</p>
+      <p class="paragraph" id="paragraph_7">Maricarmen también podía elegir, decían.</p>
+      <blockquote class="content__blockquote"><p>Esto es lo que le diría a quien se supone que he de votar en noviembre. Confiésate. Ponte de rodillas ante mí, siervo, y acepta lo que hiciste mal</p></blockquote>
+      <p class="paragraph" id="paragraph_8">Esto es lo que le diría a quien se supone que he de votar en noviembre. Confiésate. Ponte de rodillas ante mí, siervo, y acepta lo que hiciste mal. Arrepiéntete. Y luego, explica cómo lo vas a corregir.</p>
+    </div>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    cuerpo = extraer_cuerpo(soup)
+    assert cuerpo.count("imbéciles") == 1, cuerpo
+    assert cuerpo.count("Confiésate") == 1, cuerpo
+    assert "buena suerte" in cuerpo
+    assert "Arrepiéntete" in cuerpo
+
+
 def main():
     probar_cita_pegada()
     probar_cita_con_punto()
@@ -117,7 +137,8 @@ def main():
     probar_parrafos_excluye_citas()
     probar_cuerpo_prefiere_html()
     probar_cuerpo_respaldo_json_ld()
-    print("OK: 7 pruebas superadas")
+    probar_html_cronica_vasca_real()
+    print("OK: 8 pruebas superadas")
 
 
 if __name__ == "__main__":
