@@ -103,6 +103,63 @@ TONOS_CRITICA = {
     },
 }
 
+EVALUACIONES_COMPARATIVAS = {
+    "Las palabras que nos faltan": {
+        "desenfadado": {
+            "nombre": "🎭 Nuevo prompt (Voz desenfadada de Jaione Sanz)",
+            "resumen_tematico": (
+                "Una reflexión desenfadada sobre la traición de las palabras: cómo se escapan cuando las necesitas "
+                "y aparecen tarde cuando ya no importa, y la necesidad de aprender a escuchar sin confundir la pausa "
+                "con el final de la historia."
+            ),
+            "estilo_predominante": "Crónica íntima con mordacidad y precisión quirúrgica",
+            "critica_editorial": (
+                "El texto tiene un brillo de diamante en bruto: la metáfora de la cremallera en el pecho es tan visual "
+                "y visceral que te deja sin aliento, aunque por ahí se te escapa un poco la coherencia al meter a José M. Campos "
+                "como testigo de cargo cuando la voz de la autora ya estaba sola y guapa. Hay momentos, como esa confesión "
+                "de tener unas 900 palabras pendientes, que son puro oro editorial, pero cuidado con no convertir la columna "
+                "en un monólogo que se cree demasiado importante; a veces, decir menos es decir más, incluso en una columna."
+            ),
+            "claridad_y_estructura": 9.5,
+            "rigor_y_argumentacion": 8.5,
+            "puntos_fuertes": [
+                "Esa imagen de la cremallera en el pecho es tan física y tan moderna que te la grabas a fuego en el subconsciente.",
+                "La frase 'a lo sumo, en un imbécil con estilo' tiene una puntería de francotirador que deja al lector con la boca abierta y las ganas de reírse a carcajadas.",
+            ],
+            "puntos_mejora": [
+                "Mencionar a José M. Campos en pleno vuelo es como pedirle al vino que espere al maridaje; si la voz es tuya, no necesites al autor como andamiaje.",
+                "El cierre con las '900 palabras' es un poco confuso para el lector no iniciado; o lo aclaras con más humor o lo sueltas, porque ahora suena a secreto a medias que falta definir.",
+            ],
+        },
+        "clasico": {
+            "nombre": "📰 Prompt anterior (Editor profesional clásico)",
+            "resumen_tematico": (
+                "La autora reflexiona sobre la dificultad de encontrar las palabras exactas para expresar el dolor "
+                "y la complejidad emocional humana. Analiza la relación conflictiva entre el lenguaje y la verdad íntima, "
+                "destacando la importancia de la escucha activa y la paciencia en la comunicación."
+            ),
+            "estilo_predominante": "Reflexivo",
+            "critica_editorial": (
+                "El texto posee una voz literaria muy cuidada, aunque a veces la metáfora se alarga hasta diluir "
+                "la contundencia del argumento principal. La transición hacia la confesión personal final es eficaz, "
+                "pero la repetición de la idea de la 'falta de palabras' podría haberse gestionado con mayor economía "
+                "de recursos para mantener el ritmo ágil hasta el cierre."
+            ),
+            "claridad_y_estructura": 9.0,
+            "rigor_y_argumentacion": 8.5,
+            "puntos_fuertes": [
+                "Uso fluido y evocador de las metáforas cotidianas (la cremallera, la lavadora) para ilustrar conceptos abstractos.",
+                "Tono íntimo y vulnerable que conecta genuinamente con la experiencia emocional del lector.",
+                "Destreza en el manejo del ritmo narrativo, alternando entre la anécdota anecdótica y la reflexión filosófica.",
+            ],
+            "puntos_mejora": [
+                "Poda de algunas imágenes redundantes que interrumpen la fluidez en los párrafos centrales.",
+                "Profundizar en la crítica a la 'escucha pasiva' con ejemplos más concretos o afilados para evitar un tono ligeramente cliché en esa sección.",
+            ],
+        },
+    }
+}
+
 
 def crear_prompt(titulo: str, texto: str, tono: str = "desenfadado") -> str:
     if tono == "editorial":

@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from analizar_articulos import (
+    EVALUACIONES_COMPARATIVAS,
     MODELO,
     MODELO_REESCRITURA,
     TONOS_CRITICA,
@@ -451,33 +452,110 @@ if df_filtered.empty:
 
 st.subheader("Listado y desglose de evaluaciones")
 
-for _, row in df_filtered.iterrows():
+for idx, (_, row) in enumerate(df_filtered.iterrows()):
     fecha = formatear_fecha(row.get("fecha"))
+    titulo_art = row["titulo"]
+    tiene_comparativa = titulo_art in EVALUACIONES_COMPARATIVAS
+
+    # Destacamos visualmente los artículos con opción de cambiar de tono
+    etiqueta_comparativa = " 🎭 (Comparador de tonos disponible)" if tiene_comparativa else ""
     header_text = (
-        f"{fecha} | {row['titulo']} | "
+        f"{fecha} | {titulo_art} | "
         f"Claridad: {row['claridad_y_estructura']:g}/10 | "
-        f"Agudeza crítica: {row['rigor_y_argumentacion']:g}/10"
+        f"Agudeza crítica: {row['rigor_y_argumentacion']:g}/10{etiqueta_comparativa}"
     )
 
-    with st.expander(header_text):
-        st.caption(f"Fecha: {fecha} | Estilo: {row['estilo_predominante']}")
-        st.markdown(f"**Resumen:** {row['resumen_tematico']}")
+    with st.expander(header_text, expanded=tiene_comparativa):
+        if tiene_comparativa:
+            datos_comp = EVALUACIONES_COMPARATIVAS[titulo_art]
+            st.markdown("#### 🔄 Comparador de enfoques de crítica editorial")
+            modo_tono = st.radio(
+                "Selecciona el prompt para este artículo:",
+                options=["desenfadado", "clasico", "lado_a_lado"],
+                format_func=lambda k: {
+                    "desenfadado": "🎭 Nuevo prompt (Voz desenfadada de Jaione Sanz)",
+                    "clasico": "📰 Prompt anterior (Editor profesional clásico)",
+                    "lado_a_lado": "⚖️ Comparativa lado a lado",
+                }[k],
+                horizontal=True,
+                key=f"selector_tono_art_{idx}",
+                help="Alterna entre la crítica con la voz y estilo de Jaione Sanz y la evaluación editorial clásica.",
+            )
 
-        if "critica_editorial" in df.columns and pd.notna(
-            row.get("critica_editorial")
-        ):
-            st.markdown(f"**Crítica editorial:** {row['critica_editorial']}")
+            if modo_tono in ["desenfadado", "clasico"]:
+                item_eval = datos_comp[modo_tono]
+                c_m1, c_m2, c_m3 = st.columns(3)
+                c_m1.metric("Claridad", f"{item_eval['claridad_y_estructura']} / 10")
+                c_m2.metric("Agudeza crítica", f"{item_eval['rigor_y_argumentacion']} / 10")
+                c_m3.metric("Estilo", item_eval["estilo_predominante"])
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Puntos fuertes:**")
-            for item in row["puntos_fuertes"]:
-                st.markdown(f"- {item}")
+                st.caption(f"Fecha: {fecha} | Enfoque: {item_eval['nombre']}")
+                st.markdown(f"**Resumen:** {item_eval['resumen_tematico']}")
+                st.markdown(f"**Crítica editorial:** {item_eval['critica_editorial']}")
 
-        with c2:
-            st.markdown("**Puntos de mejora:**")
-            for item in row["puntos_mejora"]:
-                st.markdown(f"- {item}")
+                col_pf, col_pm = st.columns(2)
+                with col_pf:
+                    st.markdown("**Puntos fuertes:**")
+                    for pf in item_eval["puntos_fuertes"]:
+                        st.markdown(f"- {pf}")
+                with col_pm:
+                    st.markdown("**Puntos de mejora:**")
+                    for pm in item_eval["puntos_mejora"]:
+                        st.markdown(f"- {pm}")
+            else:
+                # Mostramos la comparativa directa lado a lado
+                st.caption("Comparativa directa entre ambos enfoques para el mismo artículo:")
+                col_izq, col_der = st.columns(2)
+                with col_izq:
+                    st.markdown("##### 🎭 Nuevo prompt (Voz desenfadada)")
+                    e_des = datos_comp["desenfadado"]
+                    st.markdown(f"**Estilo:** {e_des['estilo_predominante']}")
+                    st.markdown(
+                        f"**Claridad:** {e_des['claridad_y_estructura']}/10 | "
+                        f"**Agudeza:** {e_des['rigor_y_argumentacion']}/10"
+                    )
+                    st.markdown(f"**Crítica editorial:**\n\n> {e_des['critica_editorial']}")
+                    st.markdown("**Puntos fuertes:**")
+                    for pf in e_des["puntos_fuertes"]:
+                        st.markdown(f"- {pf}")
+                    st.markdown("**Puntos de mejora:**")
+                    for pm in e_des["puntos_mejora"]:
+                        st.markdown(f"- {pm}")
+
+                with col_der:
+                    st.markdown("##### 📰 Prompt anterior (Editor clásico)")
+                    e_cla = datos_comp["clasico"]
+                    st.markdown(f"**Estilo:** {e_cla['estilo_predominante']}")
+                    st.markdown(
+                        f"**Claridad:** {e_cla['claridad_y_estructura']}/10 | "
+                        f"**Agudeza:** {e_cla['rigor_y_argumentacion']}/10"
+                    )
+                    st.markdown(f"**Crítica editorial:**\n\n> {e_cla['critica_editorial']}")
+                    st.markdown("**Puntos fuertes:**")
+                    for pf in e_cla["puntos_fuertes"]:
+                        st.markdown(f"- {pf}")
+                    st.markdown("**Puntos de mejora:**")
+                    for pm in e_cla["puntos_mejora"]:
+                        st.markdown(f"- {pm}")
+        else:
+            st.caption(f"Fecha: {fecha} | Estilo: {row['estilo_predominante']}")
+            st.markdown(f"**Resumen:** {row['resumen_tematico']}")
+
+            if "critica_editorial" in df.columns and pd.notna(
+                row.get("critica_editorial")
+            ):
+                st.markdown(f"**Crítica editorial:** {row['critica_editorial']}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Puntos fuertes:**")
+                for item in row["puntos_fuertes"]:
+                    st.markdown(f"- {item}")
+
+            with c2:
+                st.markdown("**Puntos de mejora:**")
+                for item in row["puntos_mejora"]:
+                    st.markdown(f"- {item}")
 
         if "url" in df.columns and pd.notna(row.get("url")):
             st.markdown(f"[🔗 Enlace al artículo original]({row['url']})")
