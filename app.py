@@ -7,6 +7,7 @@ import streamlit as st
 from analizar_articulos import (
     MODELO,
     MODELO_REESCRITURA,
+    TONOS_CRITICA,
     claves_para_modelo,
     crear_prompt,
     reescribir_borrador,
@@ -149,18 +150,41 @@ if "fecha" in df_filtered.columns:
     )
 
 with st.expander("Analizar un borrador nuevo"):
-    archivo_borrador = st.file_uploader(
-        "Sube el borrador",
-        type=["txt", "md"],
-        help="El archivo se analiza, pero no se añade a los rankings ni a los CSV.",
-    )
-    titulo_borrador = st.text_input("Título del borrador")
+    col_subida, col_tono = st.columns([1, 1])
+
+    with col_subida:
+        archivo_borrador = st.file_uploader(
+            "Sube el borrador",
+            type=["txt", "md"],
+            help="El archivo se analiza, pero no se añade a los rankings ni a los CSV.",
+        )
+        titulo_borrador = st.text_input("Título del borrador")
+
+    with col_tono:
+        # Añadimos el selector interactivo para alternar entre el tono desenfadado y el editorial
+        opciones_tono = list(TONOS_CRITICA.keys())
+        tono_seleccionado = st.radio(
+            "Tono de la crítica editorial:",
+            options=opciones_tono,
+            format_func=lambda t: TONOS_CRITICA[t]["nombre"],
+            index=0,
+            help="Elige si prefieres una crítica cómplice en la voz de Jaione Sanz o una revisión editorial clásica.",
+        )
+        st.caption(f"ℹ️ {TONOS_CRITICA[tono_seleccionado]['descripcion']}")
 
     if archivo_borrador is not None:
         texto_borrador = leer_borrador(archivo_borrador)
         st.caption(f"Longitud: {len(texto_borrador):,} caracteres")
     else:
-        texto_borrador = ""
+        # Permitimos pegar el texto directamente si no se dispone de archivo
+        texto_pegado = st.text_area(
+            "O pega el contenido del borrador aquí directamente:",
+            height=140,
+            placeholder="Pega aquí el texto del artículo para analizarlo...",
+        )
+        texto_borrador = texto_pegado.strip()
+        if texto_borrador:
+            st.caption(f"Longitud: {len(texto_borrador):,} caracteres")
 
     analizar_borrador = st.button(
         "Analizar borrador",
@@ -169,8 +193,12 @@ with st.expander("Analizar un borrador nuevo"):
     )
 
     if analizar_borrador:
-        titulo = titulo_borrador.strip() or archivo_borrador.name
-        prompt = crear_prompt(titulo, texto_borrador)
+        titulo = (
+            titulo_borrador.strip()
+            or (archivo_borrador.name if archivo_borrador else "Borrador sin título")
+        )
+        prompt = crear_prompt(titulo, texto_borrador, tono=tono_seleccionado)
+        prompt_sistema = TONOS_CRITICA[tono_seleccionado]["prompt_sistema"]
         ultimo_error = None
 
         # Un análisis nuevo invalida la reescritura anterior, si existía.
@@ -179,8 +207,14 @@ with st.expander("Analizar un borrador nuevo"):
         with st.spinner("Analizando el borrador con IA personalizada..."):
             for clave in claves_para_modelo(MODELO):
                 try:
-                    resultado = solicitar_analisis(clave, MODELO, prompt)
+                    resultado = solicitar_analisis(
+                        clave,
+                        MODELO,
+                        prompt,
+                        prompt_sistema=prompt_sistema,
+                    )
                     resultado = validar_analisis(resultado)
+                    resultado["tono_utilizado"] = TONOS_CRITICA[tono_seleccionado]["nombre"]
                     st.session_state["analisis_borrador"] = resultado
                     ultimo_error = None
                     break
@@ -194,6 +228,8 @@ with st.expander("Analizar un borrador nuevo"):
 
     if resultado_borrador:
         st.markdown("### Resultado del borrador")
+        if resultado_borrador.get("tono_utilizado"):
+            st.caption(f"Enfoque aplicado: {resultado_borrador['tono_utilizado']}")
 
         borrador_col1, borrador_col2, borrador_col3 = st.columns(3)
         borrador_col1.metric(

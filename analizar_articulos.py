@@ -83,8 +83,30 @@ def claves_para_modelo(modelo: str) -> list[str]:
     return cargar_claves()
 
 
-def crear_prompt(titulo: str, texto: str) -> str:
-    return f"""
+TONOS_CRITICA = {
+    "desenfadado": {
+        "nombre": "Cómplice y desenfadado (voz de Jaione Sanz)",
+        "descripcion": "Crítica directa, irónica y cercana, sin solemnidad ni tecnicismos académicos.",
+        "prompt_sistema": (
+            "Eres un editor y crítico literario que domina la voz, el ritmo y el humor "
+            "socarrón de Jaione Sanz: desenfadado, directo, irónico, cercano y sin solemnidad. "
+            "Respondes siempre en español y en JSON válido."
+        ),
+    },
+    "editorial": {
+        "nombre": "Editor profesional clásico",
+        "descripcion": "Crítica formal, analítica y orientada a los estándares periodísticos tradicionales.",
+        "prompt_sistema": (
+            "Eres especialista en análisis de textos periodísticos. "
+            "Respondes siempre en español y en JSON válido."
+        ),
+    },
+}
+
+
+def crear_prompt(titulo: str, texto: str, tono: str = "desenfadado") -> str:
+    if tono == "editorial":
+        return f"""
 Analiza el siguiente artículo de opinión en español.
 
 Valora el artículo como un editor experto en periodismo y en comunicación.
@@ -141,6 +163,52 @@ Artículo:
 {texto}
 """.strip()
 
+    # Tono desenfadado por defecto (voz y mirada de Jaione Sanz)
+    return f"""
+Analiza el siguiente artículo de opinión en español.
+
+Evalúa el artículo adoptando la voz, el estilo y la mirada de su propia autora (Jaione Sanz): desenfadada, socarrona, lúcida, mordaz, sin rodeos ni pedantería de manual de estilo, con esa cercanía de quien te comenta una columna en una charla de café o mientras espera que hierva el agua para la infusión.
+
+Haz una crítica editorial honesta, con gracia y complicidad, como una colega de profesión que no se anda con paños calientes pero sabe valorar el brillo literario: si el texto se pone estupendo, si una metáfora se estira demasiado o si un párrafo pega en el centro de la diana, díselo tal cual.
+
+Devuelve solamente un objeto JSON con esta estructura exacta:
+{{
+  "resumen_tematico": "Resumen directo y con chispa en 2 o 3 frases, sin solemnidad",
+  "estilo_predominante": "Etiqueta breve de estilo con personalidad y agudeza",
+  "critica_editorial": "2 o 3 frases de crítica editorial con tono desenfadado, irónico y cómplice con la voz de la autora",
+  "claridad_y_estructura": 7.5,
+  "rigor_y_argumentacion": 7.5,
+  "puntos_fuertes": ["Punto concreto con ironía o agudeza", "Punto concreto"],
+  "puntos_mejora": ["Punto concreto afilado y sin pelos en la lengua", "Punto concreto"]
+}}
+
+Las puntuaciones deben estar entre 1 y 10 y utilizar incrementos de 0.5.
+Usa activamente los medios puntos cuando la valoración quede entre dos niveles.
+Evalúa únicamente el contenido recibido y no inventes datos externos.
+Incluye entre 2 y 4 elementos en cada lista.
+
+En "critica_editorial", mantén la agudeza crítica constructiva pero con esa voz tan personal: ironía cotidiana, expresiones vivas ("a punto de nieve", "a cara de perro", "ponerse estupenda", etc.) y franqueza cómplice.
+
+Para "claridad_y_estructura", valora la claridad de la tesis, la organización de las ideas, el ritmo narrativo y la fluidez de lectura.
+
+Para "rigor_y_argumentacion", no exijas el rigor de una investigación académica. Valora la agudeza y eficacia de la crítica: coherencia de la opinión, fuerza de los argumentos, originalidad, ironía, humor socarrón, sátira, intención provocadora y buen uso de recursos retóricos.
+
+Calibración de notas (escala de 1 a 10, siempre en saltos de 0.5):
+Utiliza toda la escala con naturalidad, reconociendo el mérito de las mejores piezas:
+- 9.0 a 9.5 (o 10): Columna sobresaliente o brillante. Tesis original o audaz, gran pulso narrativo, voz propia muy reconocible, ironía eficaz y cierre redondo. No temas otorgar 9.0 o 9.5 a las columnas que destaquen por su agudeza y maestría en la escritura.
+- 8.0 a 8.5: Columna notable, sólida, bien armada y con buena pegada persuasiva.
+- 7.0 a 7.5: Columna correcta y funcional, con ritmo adecuado pero sin especial brillo.
+- 5.5 a 6.5: Columna irregular o plana, con saltos de tono, tópicos o desarrollo disperso.
+- 1.0 a 5.0: Columna deficiente, superficial o fallida.
+
+Tener observaciones críticas o puntos de mejora es propio de cualquier ejercicio editorial y es perfectamente compatible con una nota de 9.0 o 9.5 si el artículo es excelente en su género.
+
+Título: {titulo}
+
+Artículo:
+{texto}
+""".strip()
+
 
 def solicitar_analisis(
     clave: str,
@@ -148,6 +216,7 @@ def solicitar_analisis(
     prompt: str,
     max_intentos: int = 4,
     max_tokens: int | None = None,
+    prompt_sistema: str | None = None,
 ) -> dict:
     headers = {
         "Authorization": f"Bearer {clave}",
@@ -155,15 +224,21 @@ def solicitar_analisis(
     }
     url = URL_API_GROQ if es_modelo_groq(modelo) else URL_API
 
+    sistema = (
+        prompt_sistema
+        if prompt_sistema is not None
+        else (
+            "Eres especialista en análisis de textos periodísticos. "
+            "Respondes siempre en español y en JSON válido."
+        )
+    )
+
     datos = {
         "model": modelo,
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "Eres especialista en análisis de textos periodísticos. "
-                    "Respondes siempre en español y en JSON válido."
-                ),
+                "content": sistema,
             },
             {"role": "user", "content": prompt},
         ],
