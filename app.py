@@ -149,7 +149,7 @@ if "fecha" in df_filtered.columns:
         .drop(columns="_fecha_ord")
     )
 
-with st.expander("Analizar un borrador nuevo"):
+with st.expander("Analizar un borrador nuevo (con selector de tono)", expanded=True):
     col_subida, col_tono = st.columns([1, 1])
 
     with col_subida:
