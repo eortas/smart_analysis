@@ -67,12 +67,24 @@ def cargar_datos(filepath: str, _mtime: float = 0.0) -> pd.DataFrame:
     df = pd.read_csv(filepath)
 
     # Convertimos las columnas de texto a listas para mostrarlas como viñetas.
-    for columna in ["puntos_fuertes", "puntos_mejora"]:
+    columnas_lista = [
+        "puntos_fuertes",
+        "puntos_mejora",
+        "puntos_fuertes_clasico",
+        "puntos_mejora_clasico",
+    ]
+    for columna in columnas_lista:
         if columna in df.columns:
             df[columna] = df[columna].apply(convertir_lista)
 
     # Convertimos las puntuaciones a valores numéricos.
-    for columna in ["claridad_y_estructura", "rigor_y_argumentacion"]:
+    columnas_numericas = [
+        "claridad_y_estructura",
+        "rigor_y_argumentacion",
+        "claridad_y_estructura_clasico",
+        "rigor_y_argumentacion_clasico",
+    ]
+    for columna in columnas_numericas:
         if columna in df.columns:
             df[columna] = pd.to_numeric(df[columna], errors="coerce")
 
@@ -455,7 +467,14 @@ st.subheader("Listado y desglose de evaluaciones")
 for idx, (_, row) in enumerate(df_filtered.iterrows()):
     fecha = formatear_fecha(row.get("fecha"))
     titulo_art = row["titulo"]
-    tiene_comparativa = titulo_art in EVALUACIONES_COMPARATIVAS
+
+    # Comprobamos si el artículo dispone de comparativa (por diccionario o columnas del CSV)
+    tiene_clasico_csv = (
+        "critica_editorial_clasico" in df.columns
+        and pd.notna(row.get("critica_editorial_clasico"))
+        and str(row.get("critica_editorial_clasico")).strip() != ""
+    )
+    tiene_comparativa = (titulo_art in EVALUACIONES_COMPARATIVAS) or tiene_clasico_csv
 
     # Destacamos visualmente los artículos con opción de cambiar de tono
     etiqueta_comparativa = " 🎭 (Comparador de tonos disponible)" if tiene_comparativa else ""
@@ -467,7 +486,38 @@ for idx, (_, row) in enumerate(df_filtered.iterrows()):
 
     with st.expander(header_text, expanded=tiene_comparativa):
         if tiene_comparativa:
-            datos_comp = EVALUACIONES_COMPARATIVAS[titulo_art]
+            if titulo_art in EVALUACIONES_COMPARATIVAS:
+                datos_comp = EVALUACIONES_COMPARATIVAS[titulo_art]
+            else:
+                # Construimos la comparativa a partir de las columnas almacenadas en el CSV
+                pf_des = row.get("puntos_fuertes", [])
+                pm_des = row.get("puntos_mejora", [])
+                pf_cla = row.get("puntos_fuertes_clasico", [])
+                pm_cla = row.get("puntos_mejora_clasico", [])
+
+                datos_comp = {
+                    "desenfadado": {
+                        "nombre": "🎭 Nuevo prompt (Voz desenfadada de Jaione Sanz)",
+                        "resumen_tematico": str(row.get("resumen_tematico", "")),
+                        "estilo_predominante": str(row.get("estilo_predominante", "")),
+                        "critica_editorial": str(row.get("critica_editorial", "")),
+                        "claridad_y_estructura": row.get("claridad_y_estructura", 0.0),
+                        "rigor_y_argumentacion": row.get("rigor_y_argumentacion", 0.0),
+                        "puntos_fuertes": pf_des if isinstance(pf_des, list) else [pf_des],
+                        "puntos_mejora": pm_des if isinstance(pm_des, list) else [pm_des],
+                    },
+                    "clasico": {
+                        "nombre": "📰 Prompt anterior (Editor profesional clásico)",
+                        "resumen_tematico": str(row.get("resumen_tematico_clasico", "")),
+                        "estilo_predominante": str(row.get("estilo_predominante_clasico", "")),
+                        "critica_editorial": str(row.get("critica_editorial_clasico", "")),
+                        "claridad_y_estructura": row.get("claridad_y_estructura_clasico", 0.0),
+                        "rigor_y_argumentacion": row.get("rigor_y_argumentacion_clasico", 0.0),
+                        "puntos_fuertes": pf_cla if isinstance(pf_cla, list) else [pf_cla],
+                        "puntos_mejora": pm_cla if isinstance(pm_cla, list) else [pm_cla],
+                    },
+                }
+
             st.markdown("#### 🔄 Comparador de enfoques de crítica editorial")
             modo_tono = st.radio(
                 "Selecciona el prompt para este artículo:",

@@ -17,6 +17,7 @@ URL_API_GROQ = "https://api.groq.com/openai/v1/chat/completions"
 # Evaluamos y reescribimos con qwen/qwen3.8-27b en Groq, manteniendo
 # alineados el criterio editorial de análisis y la propuesta de reescritura.
 VERSION_CRITERIO = "opinion_qwen_v2"
+VERSION_CRITERIO_DUAL = "opinion_qwen_dual"
 
 MODELO = "qwen/qwen3.8-27b"
 
@@ -548,6 +549,38 @@ def reescribir_borrador(
     )
 
 
+def analizar_con_tono(
+    claves_articulo: list[str],
+    modelo: str,
+    titulo: str,
+    texto: str,
+    tono: str,
+) -> dict:
+    """Solicitamos y validamos el análisis de un artículo para un tono concreto."""
+    prompt = crear_prompt(titulo, texto, tono=tono)
+    prompt_sistema = TONOS_CRITICA[tono]["prompt_sistema"]
+    ultimo_error = None
+
+    for clave in claves_articulo:
+        try:
+            crudo = solicitar_analisis(
+                clave,
+                modelo,
+                prompt,
+                prompt_sistema=prompt_sistema,
+            )
+            return validar_analisis(crudo)
+        except (
+            requests.RequestException,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as error:
+            ultimo_error = error
+
+    raise ultimo_error or RuntimeError(f"No pudimos analizar con el tono {tono}")
+
 
 def seleccionar_modelo(claves: list[str]) -> tuple[str, str]:
     prompt_prueba = (
@@ -625,10 +658,17 @@ def ejecutar_analisis():
 
     df = pd.read_csv(ARCHIVO_ENTRADA)
     resultados = cargar_resultados_anteriores()
+
+    # Mantenemos analizados los artículos históricos con opinion_qwen_v2.
+    # Permitimos evaluar con ambos enfoques el último artículo y los futuros nuevos.
     urls_analizadas = {
         fila.get("url")
         for fila in resultados
-        if fila.get("version_criterio") == VERSION_CRITERIO
+        if fila.get("version_criterio") == VERSION_CRITERIO_DUAL
+        or (
+            fila.get("version_criterio") == VERSION_CRITERIO
+            and fila.get("titulo") != "Jesusito de mi vida"
+        )
     }
 
     pendientes = df[~df["url"].isin(urls_analizadas)]
@@ -648,11 +688,8 @@ def ejecutar_analisis():
 
     for numero, (_, articulo) in enumerate(pendientes.iterrows(), start=1):
         print(f"Analizando {numero}/{len(pendientes)}: {articulo['titulo']}")
-        # Los textos guardados antes de corregir el scraper incluían los
-        # fragmentos destacados (pull quotes) duplicados; sin esta limpieza
-        # el modelo interpreta la repetición como un fallo del artículo.
+        # Limpiamos el texto para evitar fragmentos destacados duplicados
         texto = limpiar_texto(articulo["texto"])
-        prompt = crear_prompt(articulo["titulo"], texto)
         ultimo_error = None
 
         # Alternamos la clave preferida y conservamos la otra como respaldo.
@@ -662,29 +699,42 @@ def ejecutar_analisis():
             + claves_ordenadas[:indice_clave]
         )
 
-        for clave in claves_articulo:
-            try:
-                analisis = solicitar_analisis(clave, modelo, prompt)
-                analisis = validar_analisis(analisis)
-                resultado = articulo.to_dict() | analisis
-                resultado["texto"] = texto
-                resultado["longitud_caracteres"] = len(texto)
-                resultado["version_criterio"] = VERSION_CRITERIO
-                resultados.append(resultado)
-                guardar_resultados(resultados)
-                ultimo_error = None
-                break
-            except (
-                requests.RequestException,
-                json.JSONDecodeError,
-                KeyError,
-                TypeError,
-                ValueError,
-            ) as error:
-                ultimo_error = error
+        try:
+            # 1. Evaluamos con la voz desenfadada de Jaione Sanz
+            print("  - Evaluando con voz de Jaione Sanz...")
+            analisis_des = analizar_con_tono(
+                claves_articulo,
+                modelo,
+                articulo["titulo"],
+                texto,
+                tono="desenfadado",
+            )
 
-        if ultimo_error:
-            print(f"No se pudo analizar el artículo: {ultimo_error}")
+            time.sleep(2)
+
+            # 2. Evaluamos con el criterio de editor profesional clásico
+            print("  - Evaluando con crítico profesional clásico...")
+            analisis_cla = analizar_con_tono(
+                claves_articulo,
+                modelo,
+                articulo["titulo"],
+                texto,
+                tono="editorial",
+            )
+
+            # Combinamos ambos análisis guardando el desenfadado en los campos base
+            # y el clásico en los campos con sufijo _clasico.
+            resultado = articulo.to_dict() | analisis_des
+            for campo in CAMPOS_ANALISIS:
+                resultado[f"{campo}_clasico"] = analisis_cla[campo]
+
+            resultado["texto"] = texto
+            resultado["longitud_caracteres"] = len(texto)
+            resultado["version_criterio"] = VERSION_CRITERIO_DUAL
+            resultados.append(resultado)
+            guardar_resultados(resultados)
+        except Exception as error:
+            print(f"No pudimos analizar el artículo: {error}")
 
         time.sleep(4)
 
